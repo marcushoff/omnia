@@ -4,7 +4,7 @@ import omnia.db.DbHandler;
 import omnia.snmp.SnmpPluginHandler;
 
 /**
- *
+ * d
  * @author Marcus Hoff <marcus.hoff@ring2.dk>
  */
 public class Omnia {
