@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<root>
+    <mib>
+        <a>JUNIPER-MIB</a>
+    </mib>
+    <capabilities>
+        <objectId>^jnx</objectId>
+    </capabilities>
+    <device>
+        <description mib="a">jnxBoxDescr</description>
+        <brand>Juniper</brand>
+        <model mib="a">jnxBoxDescr</model>
+        <serial mib="a">jnxBoxSerialNo</serial>
+    </device>
+    <lldpRemotePort>
+        <localPort lldpRemotePort="id" format="oid">
+            <split substring="12">\.</split>
+        </localPort>
+    </lldpRemotePort>
+</root>

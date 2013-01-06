@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<root>
+    <mib>
+        <a>SNMPv2-MIB</a>
+        <b>IF-MIB</b>
+        <c>LLDP-MIB</c>
+    </mib>
+    <capability>
+        <objectId mib="a">sysObjectID</objectId>
+    </capability>
+    <device>
+        <description mib="a">sysDescr</description>
+        <uptime mib="a">sysUpTime</uptime>
+        <contact mib="a">sysContact</contact>
+        <name mib="a">sysName</name>
+        <location mib="a">sysLocation</location>
+        <services mib="a">sysServices</services>
+        <brand device="description" format="value">
+            <split substring="0">\s</split>
+        </brand>
+        <model device="description" format="value">
+            <split substring="1">\s</split>
+        </model>
+        <serial><!--does not have a default value-->
+        </serial>
+        <numberOfIf mib="b">ifNumber</numberOfIf>
+        <chassisSubtype mib="c">lldpLocChassisIdSubtype</chassisSubtype>
+        <chassisId mib="c">lldpLocChassisId</chassisId>
+    </device>
+    <interface>
+        <index mib="b">ifIndex</index>
+        <adminStatus mib="b">ifAdminStatus</adminStatus>
+        <operStatus mib="b">ifOperStatus</operStatus>
+        <name mib="b">ifDescr</name>
+        <description mib="b">ifAlias</description>
+        <media mib="b">ifType</media>
+        <lastChange mib="b">ifLastChange</lastChange>
+        <mtu mib="b">ifMtu</mtu>
+        <alias mib="b">ifAlias</alias>
+        <nameX mib="b">ifName</nameX>
+        <type interface="media" format="value">
+            <switch>
+                <ethernetCsmacd interface="name" format="value">
+                    <match>^mgi|^gec</match>
+                    <then>ge</then>
+                    <match>^wlan|^ath</match>
+                    <then>wlan</then>
+                    <default>ethernetCsmacd</default>
+                </ethernetCsmacd>
+                <ppp interface="name" format="value">
+                    <match>^pppoe</match>
+                    <then>pppoe</then>
+                    <default>ppp</default>
+                </ppp>
+            </switch>
+        </type>
+    </interface>
+    <lldpLocalPort>
+        <subtype mib="c">lldpLocPortIdSubtype</subtype>
+        <id mib="c">lldpLocPortId</id>
+        <portnumber mib="c">lldpLocPortNum</portnumber>
+    </lldpLocalPort>
+    <lldpRemotePort>
+        <localPort mib="c">lldpRemLocalPortNum</localPort>
+        <index mib="c">lldpRemIndex</index>
+        <chassisSubtype mib="c">lldpRemChassisIdSubtype</chassisSubtype>
+        <chassisId mib="c">lldpRemChassisId</chassisId>
+        <subtype mib="c">lldpRemPortIdSubtype</subtype>
+        <id mib="c">lldpRemPortId</id>
+        <description mib="c">lldpRemPortDesc</description>
+        <systemName mib="c">lldpRemSysName</systemName>
+        <systemDescription mib="c">lldpRemSysDesc</systemDescription>
+    </lldpRemotePort>
+    <lldpRemoteSystem>
+        <ifSubtype mib="c">lldpRemManAddrIfSubtype</ifSubtype>
+        <ifId mib="c">lldpRemManAddrIfId</ifId>
+    </lldpRemoteSystem>
+</root>
