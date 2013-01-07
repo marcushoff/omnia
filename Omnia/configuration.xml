@@ -11,7 +11,7 @@
     </snmp>
     <deviceList>
         <deviceDeclaration id="1">
-            <cidr>192.168.1.0/24</cidr>
+            <cidr>192.168.0.0/24</cidr>
             <authorization>1</authorization>
         </deviceDeclaration>
     </deviceList>

@@ -90,25 +90,28 @@ public class Collector implements Runnable, OperationListener {
         return this.deviceCapabilities.get(address);
     }
 
-    private CommunityTarget createTarget(Address device) {
-        CommunityTarget target = new CommunityTarget();
+    private CommunityTarget[] createTargets(Address device) {
+        CommunityTarget[] targets;
         SnmpAuthorization[] snmpAuthorizations;
         snmpAuthorizations = configurationHandler.getSnmpAuthorizationForDevice(
                 device);
+        targets = new CommunityTarget[snmpAuthorizations.length];
         //TODO handle other versions and communities
         for (int i = 0; i < snmpAuthorizations.length; i++) {
-            target.setAddress(device);
+         CommunityTarget target = new CommunityTarget();
+           target.setAddress(device);
             target.setCommunity(new OctetString(
                     snmpAuthorizations[i].getCommunity()));
             target.setVersion(snmpAuthorizations[i].getVersion());
             target.setRetries(configurationHandler.getSnmpRetries());
             target.setTimeout(configurationHandler.getSnmpTimeout());
+            targets[i] = target;
         }
-        return target;
+        return targets;
     }
 
     private void createOperation(ElementTemplate template, Address address) {
-        SnmpOperation operation = new SnmpOperation(createTarget(address),
+        SnmpOperation operation = new SnmpOperation(createTargets(address),
                                                     template, this);
         SnmpParser parser = new SnmpParser();
         parser.parseOperation(operation, getCapabilities(address));

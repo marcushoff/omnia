@@ -161,8 +161,8 @@ public class ConfigurationHandler {
                 //TODO handle error
                 Logger.getLogger(ConfigurationHandler.class.getName()).log(
                         Level.SEVERE,
-                                                                           null,
-                                                                           ex);
+                        null,
+                        ex);
             }
         }
     }
@@ -190,9 +190,7 @@ public class ConfigurationHandler {
         if (foundId == null) {
             //TODO handle error
             Logger.getLogger(ConfigurationHandler.class.getName()).log(
-                    Level.WARNING,
-                                                                       null,
-                                                                       "Device does not exist");
+                    Level.WARNING, null, "Device does not exist");
             return new SnmpAuthorization[0];
         }
         Iterator deviceAuthorizationIterator = deviceElement.getChildren(
@@ -216,16 +214,12 @@ public class ConfigurationHandler {
                 if (communityElement == null) {
                     //TODO handle error
                     Logger.getLogger(ConfigurationHandler.class.getName()).log(
-                            Level.SEVERE,
-                                                                               null,
-                                                                               "No Community");
+                            Level.SEVERE, null, "No Community");
                 }
                 if (versionElement == null) {
                     //TODO handle error
                     Logger.getLogger(ConfigurationHandler.class.getName()).log(
-                            Level.SEVERE,
-                                                                               null,
-                                                                               "No Version");
+                            Level.SEVERE, null, "No Version");
 
                 } else {
                     String versionString = versionElement.getTextNormalize();
