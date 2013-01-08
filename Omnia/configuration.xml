@@ -13,10 +13,15 @@
         <deviceDeclaration id="1">
             <cidr>192.168.0.0/24</cidr>
             <authorization>1</authorization>
+            <authorization>2</authorization>
         </deviceDeclaration>
     </deviceList>
     <authorizationList>
         <authorization id="1">
+            <version>1</version>
+            <readCommunity>public</readCommunity>
+        </authorization>
+        <authorization id="2">
             <version>2c</version>
             <readCommunity>public</readCommunity>
         </authorization>

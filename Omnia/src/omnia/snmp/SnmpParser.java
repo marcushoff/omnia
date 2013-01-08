@@ -94,7 +94,7 @@ public class SnmpParser {
                                 Element element, PDU response, int format,
                                 CapabilityTemplate capabilities) {
         //TODO: handle new requested tag and element tag
-        if(template instanceof CapabilityTemplate) {
+        if (template instanceof CapabilityTemplate) {
             System.out.println();
         }
         if (template.getValue(elementName) != null) {
@@ -336,7 +336,7 @@ public class SnmpParser {
      * @return the XML level 1 element or null if it doesn't exist.
      */
     private Element getLevel1(String level1, CapabilityTemplate capabilities) {
-        if(capabilities == null) {
+        if (capabilities == null) {
             return pluginHandler.getRootElement(pluginHandler.getDefault()).getChild(
                     level1);
         }
@@ -385,14 +385,14 @@ public class SnmpParser {
      * the operation and parses the remaining contents of the template. This
      * method should be called after running the operation from parseOperation()
      *
-     * @param operation    the operation that has run.
-     * @param capabilities the capabilities of the mibPosition.
+     * @param operation   the operation that has run.
+     * @param capbilities the capabilities of the mibPosition.
      *
      * @return en ElementTemplate[] containing the parsed templates.
      */
     public ElementTemplate[] parseTemplate(SnmpOperation operation,
                                            CapabilityTemplate capbilities) {
-        if(operation.getTemplate() instanceof CapabilityTemplate) {
+        if (operation.getTemplate() instanceof CapabilityTemplate) {
             System.out.println();
         }
         PDU[] responses = operation.getResponses();

@@ -14,7 +14,10 @@ import org.snmp4j.PDU;
 import org.snmp4j.Snmp;
 import org.snmp4j.TransportMapping;
 import org.snmp4j.event.ResponseEvent;
-import org.snmp4j.smi.*;
+import org.snmp4j.smi.Address;
+import org.snmp4j.smi.Null;
+import org.snmp4j.smi.OID;
+import org.snmp4j.smi.VariableBinding;
 import org.snmp4j.transport.DefaultUdpTransportMapping;
 
 /**
@@ -22,6 +25,9 @@ import org.snmp4j.transport.DefaultUdpTransportMapping;
  * PDU, targets, transport mapping and the operation type. When these are loaded
  * run() is called to run the actual SNMP operation. When the operation finishes
  * it calls the onStop() of the OperationListener.
+ *
+ * Targets is an array of IP and SNMP authorizations. This class will iterate
+ * through them until it finds a match.
  *
  * @versionElement 1.0
  *
@@ -144,7 +150,7 @@ public class SnmpOperation implements Runnable {
     /**
      * Returns the targets.
      *
-     * @return the CommunityTarget containing the targets.
+     * @return the CommunityTarget[] containing the targets.
      */
     public CommunityTarget[] getTargets() {
         return this.targets;
@@ -160,7 +166,8 @@ public class SnmpOperation implements Runnable {
     }
 
     /**
-     * Sets the targets of the device.
+     * Sets the targets of the device. This is a list of IP and authorizations.
+     * All targets should be to the same IP.
      *
      * @param targets the targets.
      */
@@ -187,7 +194,8 @@ public class SnmpOperation implements Runnable {
     }
 
     /**
-     * Sets the operation to perform.
+     * Sets the operation to perform. Valid operations are GET, GETNEXT and
+     * GETALL.
      *
      * @param operation the operation.
      */
@@ -211,159 +219,102 @@ public class SnmpOperation implements Runnable {
      */
     @Override
     public void run() {
-        switch (this.operation) {
-            case GET:
-                runGet();
-                break;
-            case GETNEXT:
-                runGetNext();
-                break;
-            case GETALL:
-                runGetAll();
-                break;
-            default:
+        if (this.request != null) {
+            switch (this.operation) {
+                case GET:
+                    this.request.setType(PDU.GET);
+                    break;
+                case GETNEXT:
+                    this.request.setType(PDU.GETNEXT);
+                    break;
+                case GETALL:
+                    this.request.setType(PDU.GETNEXT);
+                    break;
+                default:
 
-            //TODO handle error
+                //TODO handle error
+            }
         }
+        runGetOID();
         this.listener.onStop(this);
     }
 
-    private void runGet() {
-        if (this.request == null) {
-            return;
-        }
-        boolean failure = true;
-        this.request.setType(PDU.GET);
-        PDU[] requests = split(this.request);
-        PDU[] localResponses = new PDU[requests.length];
-        try {
-            UdpAddress adr = (UdpAddress) getAddress();
-            for (int j = 0; j < this.targets.length && failure; j++) {
-                for (int i = 0; i < requests.length; i++) {
-                    ResponseEvent response =
-                            this.snmp.send(requests[i], this.targets[j]);
-                    if (response.getPeerAddress() != null) {
-                        localResponses[i] = response.getResponse();
-                    }
-                }
-                if (localResponses[0] != null) {
-                    failure = false;
-                }
-            }
-            if (localResponses[0] == null) {
-                return;
-            }
-            this.responses = new PDU[1];
-            this.responses[0] = combine(localResponses);
-        } catch (Exception ex) {
-            //TODO: handle exception
-            //  Logger.getLogger(Collector.class.getName()).log(Level.SEVERE,
-//                                                                null, ex);
-        }
-
-    }
-
-    private void runGetNext() {
-        if (this.request == null) {
-            return;
-        }
-        boolean failure = true;
-        this.request.setType(PDU.GETNEXT);
-        PDU[] requests = split(this.request);
-        PDU[] localResponses = new PDU[requests.length];
-        try {
-            for (int j = 0; j < targets.length && failure; j++) {
-                for (int i = 0; i < requests.length; i++) {
-                    ResponseEvent response =
-                            this.snmp.send(requests[i], this.targets[j]);
-                    if (response.getPeerAddress() != null) {
-                        localResponses[i] = response.getResponse();
-                    }
-                }
-                if (localResponses[0] != null) {
-                    failure = false;
-                }
-            }
-            if (localResponses[0] == null) {
-                return;
-            }
-            this.responses = new PDU[1];
-            this.responses[0] = combine(localResponses);
-        } catch (IOException ex) {
-            Logger.getLogger(Collector.class.getName()).log(Level.SEVERE,
-                                                            null, ex);
-        }
-    }
-
-    private void runGetAll() {
-        if (this.request == null) {
-            return;
-        }
-        boolean failure = true;
-        this.request.setType(PDU.GETNEXT);
+    private void runGetOID() {
+        boolean authorizationFailure = true;
         PDU nextPdu = this.request;
         ArrayList<PDU> allResponses = new ArrayList<PDU>();
         try {
-            boolean more = true;
+            boolean moreOIDs = false;
+            if (this.operation == GETALL) {
+                moreOIDs = true;
+            }
             do {
                 int pointer = 0;
                 PDU[] requests = split(nextPdu);
                 PDU[] localResponses = new PDU[requests.length];
-                for (int k = 0; k < targets.length && failure; k++) {
-                    for (int i = 0; i < requests.length; i++) {
-                        ResponseEvent response = this.snmp.send(requests[i],
-                                                                this.targets[k]);
+                for (int i = 0; i < targets.length && authorizationFailure; i++) {
+                    for (int j = 0; j < requests.length; j++) {
+                        ResponseEvent response = this.snmp.send(requests[j],
+                                                                this.targets[i]);
                         if (response.getPeerAddress() == null) {
-                            more = false;
+                            moreOIDs = false;
                             break;
                         }
                         PDU localResponse = response.getResponse();
-                        if (localResponses[0] != null) {
-                            failure = false;
-                        }
-                        VariableBinding[] bindings = localResponse.toArray();
-                        if (bindings.length <= 0) {
-                            more = false;
-                            break;
-                        }
-                        for (int j = 0; j < bindings.length; j++) {
-                            OID responded = bindings[j].getOid();
-                            OID requested =
-                                    this.request.toArray()[pointer].getOid();
-                            pointer++;
-                            if (!responded.startsWith(requested)) {
-                                localResponse.set(j, new VariableBinding(
-                                        requested));
+                        if (this.operation == GETALL) {
+                            VariableBinding[] bindings = localResponse.toArray();
+                            if (bindings.length <= 0) {
+                                moreOIDs = false;
+                                break;
+                            }
+                            for (int k = 0; k < bindings.length; k++) {
+                                OID responded = bindings[k].getOid();
+                                OID requested =
+                                        this.request.toArray()[pointer].getOid();
+                                pointer++;
+                                if (!responded.startsWith(requested)) {
+                                    localResponse.set(k, new VariableBinding(
+                                            requested));
+                                }
                             }
                         }
-                        localResponses[i] = localResponse;
+                        localResponses[j] = localResponse;
+                        if (localResponses[0] != null) {
+                            authorizationFailure = false;
+                        }
                     }
                 }
-
-                if (!more) {
+                if (!moreOIDs && this.operation == GETALL) {
                     break;
                 }
+                if (localResponses[0] == null && this.operation != GETALL) {
+                    return;
+                }
                 PDU combinedResponse = combine(localResponses);
-                boolean allNull = true;
-                VariableBinding[] bindings = combinedResponse.toArray();
-                for (int i = 0; i < bindings.length; i++) {
-                    if (!(bindings[i].getVariable() instanceof Null)) {
-                        allNull = false;
+                if (this.operation == GETALL) {
+                    boolean allNull = true;
+                    VariableBinding[] bindings = combinedResponse.toArray();
+                    for (int i = 0; i < bindings.length; i++) {
+                        if (!(bindings[i].getVariable() instanceof Null)) {
+                            allNull = false;
+                            break;
+                        }
+                    }
+                    if (allNull) {
                         break;
                     }
                 }
-                if (allNull) {
-                    break;
-                }
                 allResponses.add(combinedResponse);
-                nextPdu = new PDU(nextPdu);
-                nextPdu.clear();
-                OID[] previous = new OID[combinedResponse.toArray().length];
-                for (int i = 0; i < previous.length; i++) {
-                    previous[i] = combinedResponse.toArray()[i].getOid();
+                if (this.operation == GETALL) {
+                    nextPdu = new PDU(nextPdu);
+                    nextPdu.clear();
+                    OID[] previous = new OID[combinedResponse.toArray().length];
+                    for (int i = 0; i < previous.length; i++) {
+                        previous[i] = combinedResponse.toArray()[i].getOid();
+                    }
+                    nextPdu.addAll(VariableBinding.createFromOIDs(previous));
                 }
-                nextPdu.addAll(VariableBinding.createFromOIDs(previous));
-            } while (more);
+            } while (moreOIDs);
         } catch (IOException ex) {
             Logger.getLogger(Collector.class.getName()).log(Level.SEVERE,
                                                             null, ex);
@@ -409,8 +360,8 @@ public class SnmpOperation implements Runnable {
      *
      * @param response the response
      *
-     * @return a VariableBinding[] of the response or null the operation hasn't
-     *         run yet.
+     * @return a VariableBinding[] of the response or null if the operation
+     *         hasn't run yet.
      */
     public VariableBinding[] toArray(int response) {
         if (responses != null) {
@@ -467,6 +418,11 @@ public class SnmpOperation implements Runnable {
         return returnValue;
     }
 
+    /**
+     * Returns true if the operation has a response and false otherwise.
+     *
+     * @return a <code>boolean</code> indicating if there is a response.
+     */
     public boolean hasResponses() {
         if (this.responses == null) {
             return false;

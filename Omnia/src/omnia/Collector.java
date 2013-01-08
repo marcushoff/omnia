@@ -2,7 +2,10 @@ package omnia;
 
 /**
  * This class does the collection of SNMP data from the devices. The collection
- * is based on the configuration and SNMP plugins. It parses them to analyzer.
+ * is based on the configuration and SNMP plugins. It runs an endless loop
+ * through all devices in the configuration and creates new SNMP operations and
+ * then parses the results to analyzer.
+ *
  * The class is multi threaded. The main thread is started calling the run
  * method, which forks of new threads for each asynchronous SNMP call.
  *
@@ -96,10 +99,9 @@ public class Collector implements Runnable, OperationListener {
         snmpAuthorizations = configurationHandler.getSnmpAuthorizationForDevice(
                 device);
         targets = new CommunityTarget[snmpAuthorizations.length];
-        //TODO handle other versions and communities
         for (int i = 0; i < snmpAuthorizations.length; i++) {
-         CommunityTarget target = new CommunityTarget();
-           target.setAddress(device);
+            CommunityTarget target = new CommunityTarget();
+            target.setAddress(device);
             target.setCommunity(new OctetString(
                     snmpAuthorizations[i].getCommunity()));
             target.setVersion(snmpAuthorizations[i].getVersion());
@@ -117,10 +119,6 @@ public class Collector implements Runnable, OperationListener {
         parser.parseOperation(operation, getCapabilities(address));
         Thread operationThread = new Thread(operation);
         operationThread.start();
-
-        //TODO Wait until retriesXtimeout
-        // if no response
-        // create new target if possible, should bee done in capabilityresponse
 
     }
 
@@ -154,13 +152,17 @@ public class Collector implements Runnable, OperationListener {
      *
      * @param operation the finished operation.
      */
-    private void capabilityResponse(SnmpOperation operation, ElementTemplate[] parsedTemplates) {
+    private void capabilityResponse(SnmpOperation operation,
+                                    ElementTemplate[] parsedTemplates) {
         Address peer = operation.getAddress();
-        this.deviceCapabilities.put(peer,                                  (CapabilityTemplate)   parsedTemplates[0]);
+        this.deviceCapabilities.put(peer,
+                                    (CapabilityTemplate) parsedTemplates[0]);
         System.out.println("ObjectId: " + parsedTemplates[0].getValueAsString(
                 0));
-        pluginHandler.setPlugin((CapabilityTemplate)parsedTemplates[0]);
-        System.out.println("peer: " + peer.toString() +" Document: " + ((CapabilityTemplate)parsedTemplates[0]).getDocument().getBaseURI());
+        pluginHandler.setPlugin((CapabilityTemplate) parsedTemplates[0]);
+        System.out.println(
+                "peer: " + peer.toString() + " Document: "
+                + ((CapabilityTemplate) parsedTemplates[0]).getDocument().getBaseURI());
         long time = operation.getTemplate().getTime();
         createOperation(new DeviceTemplate(time), peer);
         createOperation(new InterfaceTemplate(time), peer);

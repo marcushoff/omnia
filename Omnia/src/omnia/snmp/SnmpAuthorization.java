@@ -2,7 +2,7 @@ package omnia.snmp;
 
 /**
  * This class provides a method of exchanging SNMP authorization information
- * between classes.
+ * between classes. It contains the SNMP community and version.
  *
  * @versionElement 1.0
  *

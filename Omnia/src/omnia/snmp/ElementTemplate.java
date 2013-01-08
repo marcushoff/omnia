@@ -96,6 +96,7 @@ public class ElementTemplate implements Cloneable {
      * Returns an element as a String.
      *
      * @param element the element.
+     *
      * @return a String containing the element.
      */
     public String getElement(int element) {
@@ -107,6 +108,7 @@ public class ElementTemplate implements Cloneable {
      * returned. Use instanceof to determine the type returned.
      *
      * @param value the element.
+     *
      * @return an Object containing the value of the element or null.
      */
     public Object getValue(int value) {
@@ -118,6 +120,7 @@ public class ElementTemplate implements Cloneable {
      * returned.
      *
      * @param value the element.
+     *
      * @return a String containing the value of the element or null.
      */
     public String getValueAsString(int value) {
@@ -138,6 +141,7 @@ public class ElementTemplate implements Cloneable {
      * Returns the OID for an element.
      *
      * @param element the element.
+     *
      * @return a String containing the OID or null if it does not exist.
      */
     public String getOid(int element) {
@@ -188,6 +192,12 @@ public class ElementTemplate implements Cloneable {
         Analyzer.analyze(this);
     }
 
+    /**
+     * Returns the SNMP operation.
+     *
+     * @return an
+     * <code>int</code> representing the operation.
+     */
     public int getOperation() {
         return operation;
     }
@@ -212,6 +222,11 @@ public class ElementTemplate implements Cloneable {
         return copy;
     }
 
+    /**
+     * Creates a deep copy of this template.
+     *
+     * @return a copy of this template.
+     */
     @Override
     public ElementTemplate clone() {
         return deepCopy(new ElementTemplate(this.time));
@@ -230,6 +245,7 @@ public class ElementTemplate implements Cloneable {
      * Tests if a value has been assigned to an element.
      *
      * @param value the value to test.
+     *
      * @return false if the value is null, otherwise true.
      */
     public boolean hasValue(int value) {
