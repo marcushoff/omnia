@@ -25,14 +25,14 @@ import org.neo4j.tooling.GlobalGraphOperations;
 
 public class DbHandler {
 
-    private final EmbeddedGraphDatabase db;
+    private static EmbeddedGraphDatabase db;
 //    private AutoIndexer<Node> nodeAutoIndexer;
     private final String DEVICESERIALINDEX = "serial";
     private final WrappingNeoServerBootstrapper srv;
     private Index<Node> devices;
     //  private Index<Node> interfaces;
 
-    protected EmbeddedGraphDatabase getDb() {
+    private static EmbeddedGraphDatabase getDb() {
         return db;
     }
 
@@ -42,6 +42,10 @@ public class DbHandler {
 
     Transaction beginTx() {
         return db.beginTx();
+    }
+
+    protected static Node createNode() {
+        return getDb().createNode();
     }
 
     protected static enum RelTypes implements RelationshipType {
@@ -58,6 +62,7 @@ public class DbHandler {
         Iterator allNodes = db.getAllNodes().iterator();
         long nodecount = 0;
         while (allNodes.hasNext()) {
+            allNodes.next();
             nodecount++;
         }
         System.out.println("Node count before drop:" + nodecount);
@@ -67,6 +72,7 @@ public class DbHandler {
         nodecount = 0;
         while (allNodes.hasNext()) {
             nodecount++;
+            allNodes.next();
         }
         System.out.println("Node count after drop:" + nodecount);
         Configurator config;
@@ -112,21 +118,31 @@ public class DbHandler {
         return copy.toArray();
     }
 
-    protected static void delete(GraphDatabaseService graphDb, Node node) {
+    protected static void delete(Transaction tx, Node node) {
         Long id = node.getId();
-        Transaction tx = graphDb.beginTx();
-        try {
-            Iterator<Relationship> relationships =
-                    node.getRelationships().iterator();
-            while (relationships.hasNext()) {
-                relationships.next().delete();
-            }
-            node.delete();
-            tx.success();
-        } finally {
-            tx.finish();
-        }
+//        Transaction tx = graphDb.beginTx();
+        clear(node);
+        node.delete();
+//            tx.success();
         System.out.println("Deleted node " + id);
+    }
+
+    protected static void clear(Node node) {
+        Iterator<String> properties = node.getPropertyKeys().iterator();
+        while (properties.hasNext()) {
+            node.removeProperty(properties.next());
+        }
+        Iterator<Relationship> relationships =
+                node.getRelationships().iterator();
+        while (relationships.hasNext()) {
+            relationships.next().delete();
+        }
+    }
+
+    protected static void removeFromIndex(String indexName, Node node) {
+        Index index = getDb().index().forNodes(indexName);
+        index.remove(node);
+
     }
 
     private static void dropDb(GraphDatabaseService graphDb) {
@@ -135,7 +151,15 @@ public class DbHandler {
                 GlobalGraphOperations.at(graphDb).getAllNodes().
                 iterator();
         while (allNodes.hasNext()) {
-            delete(graphDb, allNodes.next());
+            Transaction tx = graphDb.beginTx();
+            try {
+                delete(tx, allNodes.next());
+                tx.success();
+            } catch (Exception ex) {
+                tx.failure();
+            } finally {
+                tx.finish();
+            }
         }
         System.out.println("Database dropped");
     }

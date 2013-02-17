@@ -16,10 +16,7 @@ import org.jdom2.Attribute;
 import org.jdom2.Document;
 import org.jdom2.Element;
 import org.snmp4j.PDU;
-import org.snmp4j.smi.Null;
-import org.snmp4j.smi.OID;
-import org.snmp4j.smi.Variable;
-import org.snmp4j.smi.VariableBinding;
+import org.snmp4j.smi.*;
 
 /**
  *
@@ -54,9 +51,14 @@ public class SnmpParser {
     public void parseOperation(SnmpOperation operation,
                                CapabilityTemplate capabilities) {
         ElementTemplate template = operation.getTemplate();
+        Document capabilityDocument = null;
+        if(capabilities != null) {
+            capabilityDocument = capabilities.getDocument();
+        }
         for (int i = 0; i < template.size(); i++) {
-            Element element = getLevel2(template.template,
-                                        template.getElement(i), capabilities);
+            Element element =
+                    getGrandchild(template.template,
+                                  template.getElement(i), capabilityDocument);
             if (element != null) {
                 String context = element.getTextNormalize();
 
@@ -64,7 +66,7 @@ public class SnmpParser {
                 if (input != null) {
                     String mibRef = input.getValue();
                     String mib =
-                            getLevel2(MIB_INPUT, mibRef, capabilities).getTextNormalize();
+                            getGrandchild(MIB_INPUT, mibRef, element.getDocument()).getTextNormalize();
                     String oid = operation.addRequest(pluginHandler.load(mib),
                                                       context);
                     template.setOid(i, oid);
@@ -75,28 +77,26 @@ public class SnmpParser {
     }
 
     /**
-     * Parse an XML element recursively. After SNMP processing this method is
-     * called to parse all element recursively including the MIBs resulting from
-     * the SNMP operation. If the element is already set in the template is
-     * returns the existing element. Returns null if the elementName does not
-     * exist or if XML processing like split, match or switch fail.
+     * Parse an XML childElement recursively. After SNMP processing this method
+     * is called to parse all Element recursively including the MIBs
+     * resulting from the SNMP operation. If the Element is already set in
+     * the template is returns the existing Element. Returns null if the
+     * elementName does not exist or if XML processing like split, match or
+     * switch fail.
      *
-     * @param template     the template to parse the element against.
-     * @param elementName  the template element to parse against.
-     * @param element      the element to parse.
+     * @param template     the template to parse the childElement against.
+     * @param elementName  the template Element to parse against.
+     * @param Element      the Element to parse.
      * @param format       the value of format
      * @param capabilities the value of capabilities
      *
-     * @return a String final contents of the element or null if processing
+     * @return a String final contents of the childElement or null if processing
      *         fails.
      */
     private String parseElement(ElementTemplate template, int elementName,
                                 Element element, PDU response, int format,
                                 CapabilityTemplate capabilities) {
-        //TODO: handle new requested tag and element tag
-        if (template instanceof CapabilityTemplate) {
-            System.out.println();
-        }
+        //TODO: handle new requested tag and childElement tag
         if (template.getValue(elementName) != null) {
             /*
              * Element is already set.
@@ -121,11 +121,11 @@ public class SnmpParser {
         }
         if (dependencyName.equals(MIB_INPUT)) {
             /*
-             * Parse mib element
+             * Parse mib childElement
              */
             Mib mib =
                     pluginHandler.load(
-                    getLevel2(MIB_INPUT, dependencyValue, capabilities).getTextNormalize());
+                    getGrandchild(MIB_INPUT, dependencyValue, element.getDocument()).getTextNormalize());
             MibValueSymbol symbol = (MibValueSymbol) mib.getSymbol(context);
             OID requested = new OID(symbol.getValue().toString());
             Variable oidResponse = response.getVariable(requested);
@@ -202,8 +202,8 @@ public class SnmpParser {
             dependencyFormat = OID;
         }
         dependency = parseElement(template, elementName,
-                                  getLevel2(dependencyName, dependencyValue,
-                                            capabilities),
+                                  getGrandchild(dependencyName, dependencyValue,
+                                                element.getDocument()),
                                   response, dependencyFormat, capabilities);
         return parseProcesses(element, dependency, template, elementName,
                               response, dependencyFormat, null);
@@ -329,40 +329,30 @@ public class SnmpParser {
     }
 
     /**
-     * Returns XML level 1 element.
+     * Returns XML level 2 childElement.
      *
-     * @param level1 the element to return.
+     * @param child      the level 1 childElement.
+     * @param grandchild the childElement to return.
      *
-     * @return the XML level 1 element or null if it doesn't exist.
+     * @return the XML level 2 childElement or null if it doesn't exist.
      */
-    private Element getLevel1(String level1, CapabilityTemplate capabilities) {
-        if (capabilities == null) {
-            return pluginHandler.getRootElement(pluginHandler.getDefault()).getChild(
-                    level1);
-        }
-        Document document = capabilities.getDocument();
+    private Element getGrandchild(String child, String grandchild,
+                                  Document document) {
         if (document == null) {
-            pluginHandler.setPlugin(capabilities);
-            document = capabilities.getDocument();
+            return pluginHandler.getRootElement(null).getChild(child).getChild(
+                    grandchild);
         }
-        return pluginHandler.getRootElement(document).getChild(level1);
-    }
-
-    /**
-     * Returns XML level 2 element.
-     *
-     * @param level1 the level 1 element.
-     * @param level2 the element to return.
-     *
-     * @return the XML level 2 element or null if it doesn't exist.
-     */
-    private Element getLevel2(String level1, String level2,
-                              CapabilityTemplate capabilities) {
-        Element element = getLevel1(level1, capabilities);
-        if (element == null) {
-            return element;
+        Element childElement = pluginHandler.getRootElement(document).getChild(
+                child);
+        if (childElement == null) {
+            childElement = pluginHandler.getRootElement(null).getChild(child);
         }
-        return element.getChild(level2);
+        Element grandChildElement = childElement.getChild(grandchild);
+        if (grandChildElement == null) {
+            grandChildElement = pluginHandler.getRootElement(null).getChild(
+                    child).getChild(grandchild);
+        }
+        return grandChildElement;
     }
 
     public boolean isPhysIf(String ifType) {
@@ -390,26 +380,25 @@ public class SnmpParser {
      *
      * @return en ElementTemplate[] containing the parsed templates.
      */
-    public ElementTemplate[] parseTemplate(SnmpOperation operation,
+    public ElementTemplate[] parseTemplate(PDU[] responses,
+                                           ElementTemplate template,
+                                           Address address,
                                            CapabilityTemplate capbilities) {
-        if (operation.getTemplate() instanceof CapabilityTemplate) {
-            System.out.println();
-        }
-        PDU[] responses = operation.getResponses();
+        //      PDU[] responses = new PDU[]operation.getResponses();
         int lengthOfResponses = responses.length;
         ElementTemplate[] returnValue = new ElementTemplate[lengthOfResponses];
         for (int i = 0; i < lengthOfResponses; i++) {
             returnValue[i] = parseAttributes(responses[i],
-                                             operation.getTemplate().clone(),
+                                             template,
                                              capbilities);
-            returnValue[i].setDevice(operation.getAddress());
+            returnValue[i].setDevice(address);
         }
         return returnValue;
     }
 
     /**
      * Generically parses all attributes of an ElementTemplate. Parses each
-     * element in the template.
+     * childElement in the template.
      *
      * @param response     the response of the SnmpOperation.
      * @param template     the template to parse.
@@ -420,12 +409,24 @@ public class SnmpParser {
     private ElementTemplate parseAttributes(PDU response,
                                             ElementTemplate template,
                                             CapabilityTemplate capabilities) {
+        Document capabilityDocument = null;
+        if(capabilities != null) {
+            capabilityDocument = capabilities.getDocument();
+        }
         for (int i = 0; i < template.size(); i++) {
-            Element element = getLevel2(template.template,
-                                        template.getElement(i), capabilities);
+            Element element =
+                    getGrandchild(template.template,
+                                  template.getElement(i), capabilityDocument);
             if (element != null) {
-                template.setValue(i, parseElement(template, i, element,
-                                                  response, VALUE, capabilities));
+                String parsedElement = parseElement(template, i, element,
+                                                    response, VALUE,
+                                                    capabilities);
+                if (parsedElement != null) {
+                    parsedElement.trim();
+                    if (!parsedElement.isEmpty()) {
+                        template.setValue(i, parsedElement);
+                    }
+                }
             }
         }
         return template;

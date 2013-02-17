@@ -2,12 +2,10 @@ package omnia.db;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.Map;
 import omnia.Omnia;
 import omnia.db.DbHandler.RelTypes;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.index.Index;
-import org.neo4j.graphdb.index.UniqueFactory;
 
 /**
  * This class provides a complete operation on the database. It locks down all
@@ -23,14 +21,16 @@ public class DbOperation {
     private final DbHandler dbHandler = Omnia.dbHandler;
     private Transaction tx;
     private Index<Node> devices;
-    private ArrayList<Node> nodes;
-    private ArrayList<Relationship> relationships;
+    private ArrayList<Relationship> lockedRelationships;
+    private ArrayList<Node> deletedNodes;
+    private ArrayList<Node> lockedNodes;
 
     public DbOperation() {
         tx = dbHandler.beginTx();
         devices = dbHandler.getIndex("devices");
-        nodes = new ArrayList<Node>();
-        relationships = new ArrayList<Relationship>();
+        deletedNodes = new ArrayList<Node>();
+        lockedNodes = new ArrayList<Node>();
+        lockedRelationships = new ArrayList<Relationship>();
     }
 
     @Override
@@ -41,6 +41,7 @@ public class DbOperation {
 
     public void close() {
         System.out.println("Closing operation " + tx.toString());
+        deepDelete();
         tx.finish();
     }
 
@@ -52,11 +53,12 @@ public class DbOperation {
      * @param to   reference to the <it>to</it> node.
      */
     public void setHas(int from, int to) {
-        Iterator<Relationship> relationships =
+        Iterator<Relationship> hasIterator =
                 getRelationships(from, RelTypes.HAS, Direction.OUTGOING);
 
-        while (hasNext(relationships)) {
-            if (getId(getEndNode(next(relationships))) == getId(to)) {
+        while (hasNext(hasIterator)) {
+            if (getId(getEndNode(next(hasIterator))) == getId(to)) {
+                //TODO: catch NotFoundEx
                 return;
             }
         }
@@ -67,17 +69,34 @@ public class DbOperation {
         return getId(node) != getId(otherNode);
     }
 
-    private boolean lock(int node) {
-        try {
-            tx.acquireWriteLock(nodes.get(node));
-            System.out.println("Locked node " + getId(node) + " "
-                               + tx.toString());
-            return true;
-        } catch (NotFoundException ex) {
-            System.out.println("Failed lock on node " + getId(node) + " "
-                               + tx.toString());
-            return false;
+    /**
+     * Locks a node. Throws NotFoundException, if the node does not exist.
+     *
+     * @param node the node to lock
+     */
+    private void lock(Node node) {
+        if (lockedNodes.contains(node)) {
+            return;
         }
+        tx.acquireWriteLock(node);
+        System.out.println("Locked node " + node.getId() + " "
+                           + tx.toString());
+        lockedNodes.add(node);
+    }
+
+    /**
+     * Locks a node. Throws NotFoundException, if the node does not exist.
+     *
+     * @param node the node to lock
+     */
+    private void lock(Relationship relationship) {
+        if (lockedRelationships.contains(relationship)) {
+            return;
+        }
+        tx.acquireWriteLock(relationship);
+        System.out.println("Locked relationship " + relationship.getId() + " "
+                           + tx.toString());
+        lockedRelationships.add(relationship);
     }
 
     private void success() {
@@ -85,6 +104,7 @@ public class DbOperation {
     }
 
     private void failure() {
+        //TODO: rewrite success and failure, to communicate state to invocing analyze classes
         System.out.println("Transaction failed: " + tx.toString());
         tx.failure();
     }
@@ -97,13 +117,15 @@ public class DbOperation {
      * @param ifTwo reference to the second interface node.
      */
     public void setCable(int ifOne, int ifTwo) {
-        Iterator<Relationship> relationships =
+        Iterator<Relationship> cableIterator =
                 getRelationships(ifOne, DbHandler.RelTypes.CABLE, Direction.BOTH);
-        while (hasNext(relationships)) {
-            int[] nodes = getNodes(next(relationships));
-            if ((getId(nodes[0]) == getId(ifOne) && getId(nodes[1]) == getId(
-                    ifTwo)) || (getId(nodes[0]) == getId(ifTwo) && getId(
-                    nodes[1]) == getId(ifOne))) {
+        while (hasNext(cableIterator)) {
+            int[] cableNodesIs = getNodes(next(cableIterator));
+            //TODO: catch NotFoundEx x2
+            if ((getId(cableNodesIs[0]) == getId(ifOne) && getId(cableNodesIs[1])
+                                                           == getId(ifTwo))
+                || (getId(cableNodesIs[0]) == getId(ifTwo)
+                    && getId(cableNodesIs[1]) == getId(ifOne))) {
                 return;
             }
         }
@@ -111,17 +133,34 @@ public class DbOperation {
     }
 
     /**
-     * Deletes a node and all its relationships.
+     * Clear a node of all its properties and lockedRelationships.
      *
-     * @param node the node to delete.
+     * @param node the node to clear.
      */
-    public void delete(int node) {
-        System.out.println("Deleting node " + getId(node) + " " + tx.toString());
+    public void clear(int node) {
+        System.out.println("Clearing node " + getId(node) + " " + tx.toString());
         try {
-            dbHandler.delete(dbHandler.getDb(), nodes.get(node));
-            success();
+            dbHandler.clear(lockedNodes.get(node));
         } catch (Exception ex) {
             failure();
+        }
+    }
+
+    public void delete(int node) {
+        deletedNodes.add(lockedNodes.get(node));
+    }
+
+    private void deepDelete() {
+        for (int i = 0; i < deletedNodes.size(); i++) {
+            Node deletedNode = deletedNodes.get(i);
+            System.out.println("Deleting node " + deletedNode.getId() + " "
+                               + tx.toString());
+            try {
+                DbHandler.delete(tx, deletedNode);
+                success();
+            } catch (Exception ex) {
+                failure();
+            }
         }
     }
 
@@ -147,84 +186,55 @@ public class DbOperation {
     private boolean hasProperty(int device, String property) {
         System.out.println("Checking property " + property + " on node "
                            + getId(device) + " " + tx.toString());
-        return nodes.get(device).hasProperty(property);
+        return lockedNodes.get(device).hasProperty(property);
     }
 
-    private void setProperty(int node, String property, Object value) {
+    private boolean setProperty(int node, String property, Object value) throws
+            IllegalStateException {
         try {
-            nodes.get(node).setProperty(property, value);
-            System.out.println("Setting property " + property + " for node " + getId(node) + " " + tx.toString());
+            lockedNodes.get(node).setProperty(property, value);
+            System.out.println("Setting property " + property + " for node "
+                               + getId(node) + " " + tx.toString());
             success();
-        } catch (Exception ex) {
+            return true;
+        } catch (IllegalArgumentException ex) {
             failure();
+            return false;
         }
     }
 
-    private int getOtherNode(int relationship, int node) {
-        boolean lock = false;
-        int nodeId = -1;
-        while (!lock) {
-            Node otherNode = relationships.get(relationship).getOtherNode(
-                    nodes.get(node));
-            nodes.add(otherNode);
-            nodeId = nodes.indexOf(otherNode);
-            lock = lock(nodeId);
-            if (!lock) {
-                nodes.remove(nodeId);
-            }
-        }
-        return nodeId;
+    private int getRelationshipNode(int relationship, int node) {
+        Node otherNode =
+                lockedRelationships.get(relationship).getOtherNode(lockedNodes.get(
+                node));
+        lock(otherNode);
+        return lockedNodes.indexOf(otherNode);
     }
 
     private int getEndNode(int relationship) {
-        boolean lock = false;
-        int nodeId = -1;
-        while (!lock) {
-            Node endNode = relationships.get(relationship).getEndNode();
-            nodes.add(endNode);
-            nodeId = nodes.indexOf(endNode);
-            lock(nodeId);
-            if (!lock) {
-                nodes.remove(nodeId);
-            }
-        }
-        return nodeId;
+        Node endNode = lockedRelationships.get(relationship).getEndNode();
+        lock(endNode);
+        return lockedNodes.indexOf(endNode);
     }
 
     private int[] getNodes(int relationship) {
-        boolean[] locks = {false, false};
         int[] returnIds = {-1, -1};
-        while (!locks[0] && !locks[1]) {
-            Node[] nodes = relationships.get(relationship).getNodes();
-            for (int i = 0; i < nodes.length; i++) {
-                this.nodes.add(nodes[i]);
-                returnIds[i] = this.nodes.indexOf(nodes[i]);
-                locks[i] = lock(returnIds[i]);
-                if (!locks[i]) {
-                    this.nodes.remove(returnIds[i]);
-                }
-            }
+        Node[] relNodes = lockedRelationships.get(relationship).getNodes();
+        for (int i = 0; i < relNodes.length; i++) {
+            lock(relNodes[i]);
+            returnIds[i] = lockedNodes.indexOf(relNodes[i]);
         }
         return returnIds;
     }
 
     private int next(Iterator<Relationship> relationships) {
-        boolean lock = false;
-        int relId = -1;
-        while (!lock) {
-            Relationship relationship = relationships.next();
-            this.relationships.add(relationship);
-            relId = this.relationships.indexOf(relationship);
-            lock = lock(relId);
-            if (!lock) {
-                this.relationships.remove(relId);
-                if (!hasNext(relationships)) {
-                    lock = true;
-                    relId = -1;
-                }
-            }
+        if (!hasNext(relationships)) {
+            return -1;
         }
-        return relId;
+        int relId = -1;
+        Relationship relationship = relationships.next();
+        lock(relationship);
+        return lockedRelationships.indexOf(relationship);
     }
 
     private boolean hasNext(Iterator<Relationship> relationships) {
@@ -232,12 +242,12 @@ public class DbOperation {
     }
 
     private Iterator<Relationship> getRelationships(int node) {
-        return nodes.get(node).getRelationships().iterator();
+        return lockedNodes.get(node).getRelationships().iterator();
     }
 
     private Iterator<Relationship> getRelationships(int node, RelTypes type,
                                                     Direction direction) {
-        return nodes.get(node).getRelationships(type, direction).iterator();
+        return lockedNodes.get(node).getRelationships(type, direction).iterator();
     }
 
     /**
@@ -251,7 +261,7 @@ public class DbOperation {
     public Object getProperty(int node, String property) {
         Object returnProperty;
         try {
-            returnProperty = nodes.get(node).getProperty(property);
+            returnProperty = lockedNodes.get(node).getProperty(property);
         } catch (NotFoundException ex) {
             returnProperty = null;
         }
@@ -262,7 +272,7 @@ public class DbOperation {
         System.out.println("Removing property " + property + " from node "
                            + getId(node) + " " + tx.toString());
         try {
-            nodes.get(node).removeProperty(property);
+            lockedNodes.get(node).removeProperty(property);
             success();
         } catch (Exception ex) {
             failure();
@@ -270,42 +280,47 @@ public class DbOperation {
     }
 
     private Iterator<String> getPropertyKeys(int node) {
-        return nodes.get(node).getPropertyKeys().iterator();
+        return lockedNodes.get(node).getPropertyKeys().iterator();
     }
 
     private long getId(int node) {
-        return nodes.get(node).getId();
+        return lockedNodes.get(node).getId();
     }
 
-    private int getAndLock(UniqueFactory<Node> factory, String key,
-                           Object value) {
-        boolean lock = false;
-        Node node;
-        int nodeId = -1;
-        while (!lock) {
-            node = factory.getOrCreate(key, value);
-            nodes.add(node);
-            nodeId = nodes.indexOf(node);
-            lock = lock(nodeId);
-            if (!lock) {
-                nodes.remove(nodeId);
-            } else {
-                try {
-                    //Check if the node is writable ie. has not been deleted
-                    setProperty(nodeId, key, value);
-                } catch (NotFoundException ex) {
-                    lock = false;
-                }
+    private int getOrCreate(String indexName, String key, Object value) {
+        //TODO: Need to test if pessimistic locking works
+        Index<Node> index = dbHandler.getIndex(indexName);
+        Node node = index.get(key, value).getSingle();
+        if (node != null) {
+            lock(node);
+            //TODO: catch NotFoundEx
+            if (deletedNodes.contains(node)) {
+                undelete(node);
             }
+            return lockedNodes.indexOf(node);
         }
-        System.out.println("Created node " + getId(nodeId) + " " + tx.toString());
-        return nodeId;
+        Node created = dbHandler.createNode();
+        lock(created);
+        //TODO: catch NotFoundEx
+        node = index.putIfAbsent(created, key, value);
+        if (node == null) {
+            System.out.println("Created node " + created.getId() + " "
+                               + tx.toString());
+            return lockedNodes.indexOf(created);
+        }
+        lock(node);
+        //TODO: catch NotFoundEx
+        delete(lockedNodes.indexOf(created));
+        return lockedNodes.indexOf(node);
     }
 
-    private void createRelationshipBetween(int nodeOne, int nodeTwo, RelTypes type) {
+    private void createRelationshipBetween(int nodeOne, int nodeTwo,
+                                           RelTypes type) {
         try {
-            nodes.get(nodeOne).createRelationshipTo(nodes.get(nodeTwo), type);
-            System.out.println("Created relationship " + type.name() + " between nodes " + getId(nodeOne) + ", " + getId(nodeTwo) + " " + tx.toString());
+            lockedNodes.get(nodeOne).createRelationshipTo(lockedNodes.get(nodeTwo), type);
+            System.out.println("Created relationship " + type.name()
+                               + " between nodes " + getId(nodeOne) + ", "
+                               + getId(nodeTwo) + " " + tx.toString());
             success();
         } catch (Exception ex) {
             failure();
@@ -321,26 +336,12 @@ public class DbOperation {
      * @return a handle to the node
      */
     public int getOrCreateDevice(String chassisId, String snmpAddress) {
-        UniqueFactory<Node> factory =
-                new UniqueFactory.UniqueNodeFactory(dbHandler.getDb(), "devices") {
-
-                    @Override
-                    protected void initialize(Node created,
-                                              Map<String, Object> properties) {
-                        Object snmpAddress = properties.get("snmpAddress");
-                        if (snmpAddress != null) {
-                            created.setProperty("snmpAddress", snmpAddress);
-                        }
-                        Object chassisId = properties.get("chassisId");
-                        if (chassisId != null) {
-                            created.setProperty("chassisId", chassisId);
-                        }
-                    }
-                };
         int device = -1;
         if (chassisId != null && snmpAddress != null) {
-            device = getAndLock(factory, "chassisId", chassisId);
-            int otherDevice = getAndLock(factory, "snmpAddress", snmpAddress);
+            device = getOrCreate("devices", "chassisId", chassisId);
+            //TODO: tjek return -1
+            int otherDevice = getOrCreate("devices", "snmpAddress", snmpAddress);
+            //TODO: tjek return -1
             if (isSameNode(otherDevice, device)) {
                 Iterator<String> properties = getPropertyKeys(otherDevice);
                 while (properties.hasNext()) {
@@ -350,12 +351,14 @@ public class DbOperation {
                                                                   property));
                     }
                 }
-                Iterator<Relationship> relationships = getRelationships(
+                Iterator<Relationship> relIterator = getRelationships(
                         otherDevice);
-                while (hasNext(relationships)) {
-                    int relationship = next(relationships);
-                    int otherInterface = getOtherNode(relationship,
-                                                      otherDevice);
+                while (hasNext(relIterator)) {
+                    int relationship = next(relIterator);
+                    //TODO: tjek return -1
+                    int otherInterface = getRelationshipNode(relationship,
+                                                             otherDevice);
+                    //TODO: catch NotFoundEx
                     Object index = null;
                     Object alias = null;
                     Object nameX = null;
@@ -387,29 +390,32 @@ public class DbOperation {
                     Iterator<Relationship> otherRelationships =
                             getRelationships(otherInterface);
                     while (hasNext(otherRelationships)) {
-                        int relNode = getOtherNode(next(otherRelationships),
-                                                   otherInterface);
+                        int relNode = getRelationshipNode(next(
+                                otherRelationships),
+                                                          otherInterface);
+                        //TODO: catch NotFoundEx x2
                         setCable(thisInterface, relNode);
                     }
                 }
                 if (hasProperty(otherDevice, "indexName")) {
                     String indexName = (String) getProperty(otherDevice,
                                                             "indexName");
-                    dbHandler.getDb().index().forNodes(indexName).delete();
+                    dbHandler.getIndex(indexName).delete();
                 }
-                devices.remove(nodes.get(otherDevice));
-                delete(otherDevice);
-                devices.add(nodes.get(device), "snmpAddress", snmpAddress);
+                devices.remove(lockedNodes.get(otherDevice));
+                clear(otherDevice);
+                devices.add(lockedNodes.get(device), "snmpAddress", snmpAddress);
             }
-
         } else if (chassisId != null) {
-            device = getAndLock(factory, "chassisId", chassisId);
+            device = getOrCreate("devices", "chassisId", chassisId);
+            //TODO: tjek return -1
 //            update(device, "snmpAddress", snmpAddress);
             if (!hasProperty(device, "indexName")) {
                 update(device, "indexName", chassisId);
             }
         } else if (snmpAddress != null) {
-            device = getAndLock(factory, "snmpAddress", snmpAddress);
+            device = getOrCreate("devices", "snmpAddress", snmpAddress);
+            //TODO: tjek return -1
 //            update(device, "chassisId", chassisId);
             if (!hasProperty(device, "indexName")) {
                 update(device, "indexName", snmpAddress);
@@ -421,82 +427,56 @@ public class DbOperation {
     public int getOrCreateInterface(int device, Object index, Object alias,
                                     Object nameX, Object portnumber) {
         Index deviceIndex = dbHandler.getIndex(
-                getProperty(device,
-                            "indexName").toString());
-
-        UniqueFactory<Node> factory =
-                new UniqueFactory.UniqueNodeFactory(dbHandler.getDb(),
-                                                    deviceIndex.getName()) {
-
-                    @Override
-                    protected void initialize(Node created,
-                                              Map<String, Object> properties) {
-                        Object index = properties.get("index");
-                        if (index != null) {
-                            created.setProperty("index", index);
-                        }
-                        Object alias = properties.get("alias");
-                        if (alias != null) {
-                            created.setProperty("alias", alias);
-                        }
-                        Object nameX = properties.get("nameX");
-                        if (nameX != null) {
-                            created.setProperty("nameX", nameX);
-                        }
-                        Object portnumber = properties.get("portnumber");
-                        if (portnumber != null) {
-                            created.setProperty("portnumber", portnumber);
-                        }
-                    }
-                };
-        int indexes;
-        int aliases;
-        int names;
-        int portnumbers;
+                getProperty(device, "indexName").toString());
+        int indexes = 0;
+        int aliases = 0;
+        int names = 0;
+        int portnumbers = 0;
         if (index != null) {
             indexes = deviceIndex.get("index", index).size();
-        } else {
-            indexes = 0;
         }
         if (alias != null) {
             aliases = deviceIndex.get("alias", alias).size();
-        } else {
-            aliases = 0;
         }
         if (nameX != null) {
             names = deviceIndex.get("nameX", nameX).size();
-        } else {
-            names = 0;
         }
         if (portnumber != null) {
             portnumbers = deviceIndex.get("portnumber", portnumber).size();
-        } else {
-            portnumbers = 0;
         }
         int all = indexes + aliases + names + portnumbers;
 
         int returnIf = -1;
         if (index != null && (indexes > 0 || all == 0)) {
-            returnIf = getAndLock(factory, "index", index);
+            returnIf = getOrCreate(deviceIndex.getName(), "index", index);
+            //TODO: tjek return -1
             update(returnIf, "alias", alias);
             update(returnIf, "nameX", nameX);
             update(returnIf, "portnumber", portnumber);
         } else if (alias != null && (aliases > 0 || all == 0)) {
-            returnIf = getAndLock(factory, "alias", alias);
+            returnIf = getOrCreate(deviceIndex.getName(), "alias", alias);
+            //TODO: tjek return -1
             update(returnIf, "index", index);
             update(returnIf, "nameX", nameX);
             update(returnIf, "portnumber", portnumber);
         } else if (nameX != null && (names > 0 || all == 0)) {
-            returnIf = getAndLock(factory, "nameX", nameX);
+            returnIf = getOrCreate(deviceIndex.getName(), "nameX", nameX);
+            //TODO: tjek return -1
             update(returnIf, "alias", alias);
             update(returnIf, "index", index);
             update(returnIf, "portnumber", portnumber);
         } else if (portnumber != null) {
-            returnIf = getAndLock(factory, "portnumber", portnumber);
+            returnIf = getOrCreate(deviceIndex.getName(), "portnumber",
+                                   portnumber);
+            //TODO: tjek return -1
             update(returnIf, "alias", alias);
             update(returnIf, "nameX", nameX);
             update(returnIf, "index", index);
         }
         return returnIf;
+    }
+
+    private void undelete(Node node) {
+        deletedNodes.remove(node);
     }
 }

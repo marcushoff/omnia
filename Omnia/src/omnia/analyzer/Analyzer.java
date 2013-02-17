@@ -35,7 +35,7 @@ public class Analyzer {
         if (cycleTime == null) {
             operation.update(device, "cycleTime", template.getTime());
         } else if (cycleTime < template.getTime()) {
-            operation.delete(device);
+            operation.clear(device);
             device = operation.getOrCreateDevice(chassisId, snmpAddress);
             operation.update(device, "cycleTime", template.getTime());
         }
@@ -52,7 +52,7 @@ public class Analyzer {
         if (cycleTime == null) {
             operation.update(iface, "cycleTime", template.getTime());
         } else if (cycleTime < template.getTime()) {
-            operation.delete(iface);
+            operation.clear(iface);
             iface = operation.getOrCreateInterface(device, index, alias, nameX,
                                                    portnumber);
             operation.update(iface, "cycleTime", template.getTime());

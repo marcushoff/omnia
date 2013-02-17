@@ -4,7 +4,7 @@
     <snmp>
         <retries>2</retries>
         <timeout>1500</timeout>
-        <cycletime>300000</cycletime>
+        <cycletime>90000</cycletime>
         <port>161</port>
         <protocol>udp</protocol>
         <pduSize>10</pduSize>
@@ -13,6 +13,10 @@
         <deviceDeclaration id="1">
             <cidr>192.168.0.0/24</cidr>
             <authorization>1</authorization>
+            <authorization>2</authorization>
+        </deviceDeclaration>
+        <deviceDeclaration id="2">
+            <cidr>192.168.1.0/24</cidr>
             <authorization>2</authorization>
         </deviceDeclaration>
     </deviceList>

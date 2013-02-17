@@ -50,11 +50,11 @@ public class InterfaceTemplate extends ElementTemplate {
     /**
      * The alias element.
      */
-    public static final int ALIAS = 8;
+    public static final int ALIAS = 9;
     /**
      * The if X name element.
      */
-    public static final int NAMEX = 8;
+    public static final int NAMEX = 10;
 
     /**
      * Default constructor. Sets the template name and adds the elements.
@@ -63,7 +63,7 @@ public class InterfaceTemplate extends ElementTemplate {
      */
     public InterfaceTemplate(long time) {
         super(time);
-        size = 9;
+        size = 11;
         operation = SnmpOperation.GETALL;
         template = "interface";
         initialize();

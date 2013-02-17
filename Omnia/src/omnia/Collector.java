@@ -21,6 +21,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import omnia.snmp.*;
 import org.snmp4j.CommunityTarget;
+import org.snmp4j.PDU;
 import org.snmp4j.smi.Address;
 import org.snmp4j.smi.OctetString;
 
@@ -58,7 +59,7 @@ public class Collector implements Runnable, OperationListener {
      * Start the main thread. Cycles through all configured devices and spawns
      * of new asynchronous SNMP requests. It repeats after cycle time. The cycle
      * time is stored in the configuration. The thread can be stopped by calling
-     * an interrupt.
+     * an close.
      */
     @Override
     public void run() {
@@ -129,16 +130,20 @@ public class Collector implements Runnable, OperationListener {
     @Override
     public void onStop(SnmpOperation operation) {
         if (operation.hasResponses()) {
+            //TODO: her  need to implement message passing between threads with new allocation of objects, so thread can be interrupted.
             Address peer = operation.getAddress();
             ElementTemplate[] templates;
+            ElementTemplate template = operation.getTemplate().clone();
             SnmpParser parser = new SnmpParser();
-            templates = parser.parseTemplate(operation, getCapabilities(peer));
-            if (operation.getTemplate() instanceof CapabilityTemplate) {
-                capabilityResponse(operation, templates);
+            PDU[] responses = operation.getResponses();
+            templates = parser.parseTemplate(responses, template, peer, getCapabilities(peer));
+            long time = template.getTime();
+            if (template instanceof CapabilityTemplate) {
+                capabilityResponse(peer, time, templates);
             } else {
                 for (int i = 0; i < templates.length; i++) {
                     templates[i].analyze();
-                }
+               }
             }
         } else {
             //TODO catch response errors and non responders
@@ -152,18 +157,12 @@ public class Collector implements Runnable, OperationListener {
      *
      * @param operation the finished operation.
      */
-    private void capabilityResponse(SnmpOperation operation,
+    private void capabilityResponse(Address peer, long time,
                                     ElementTemplate[] parsedTemplates) {
-        Address peer = operation.getAddress();
+//        Address peer = operation.getAddress();
         this.deviceCapabilities.put(peer,
                                     (CapabilityTemplate) parsedTemplates[0]);
-        System.out.println("ObjectId: " + parsedTemplates[0].getValueAsString(
-                0));
         pluginHandler.setPlugin((CapabilityTemplate) parsedTemplates[0]);
-        System.out.println(
-                "peer: " + peer.toString() + " Document: "
-                + ((CapabilityTemplate) parsedTemplates[0]).getDocument().getBaseURI());
-        long time = operation.getTemplate().getTime();
         createOperation(new DeviceTemplate(time), peer);
         createOperation(new InterfaceTemplate(time), peer);
         createOperation(new LldpLocalPortTemplate(time), peer);

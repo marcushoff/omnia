@@ -148,6 +148,9 @@ public class ConfigurationHandler {
     private void parseCidr(Element cidrElement, Element declaration) {
         String cidr = cidrElement.getTextNormalize();
         SubnetUtils utils = new SubnetUtils(cidr);
+        if (1 > utils.getInfo().getAddressCount()) {
+            utils.setInclusiveHostCount(true);
+        }
         String[] cidrAddresses = utils.getInfo().getAllAddresses();
         for (int i = 0; i < cidrAddresses.length; i++) {
             try {

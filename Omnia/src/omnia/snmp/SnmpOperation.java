@@ -98,7 +98,7 @@ public class SnmpOperation implements Runnable {
         this.targets = targets;
         this.template = template;
         this.listener = listener;
-        this.operation = template.getOperation();
+        operation = template.getOperation();
         initialize();
     }
 
@@ -126,12 +126,11 @@ public class SnmpOperation implements Runnable {
      * sets up a listener on the SNMP transport.
      */
     private void initialize() {
-        this.request = new PDU();
-        this.responses = null;
+        request = new PDU();
+        responses = null;
         try {
-            this.transport = new DefaultUdpTransportMapping();
-            this.snmp = new Snmp(transport);
-            this.transport.listen();
+            transport = new DefaultUdpTransportMapping();
+            snmp = new Snmp(transport);
         } catch (IOException ex) {
             Logger.getLogger(SnmpOperation.class.getName()).log(Level.SEVERE,
                                                                 null, ex);
@@ -144,7 +143,7 @@ public class SnmpOperation implements Runnable {
      * @return a PDU[] containing the responses.
      */
     public PDU[] getResponses() {
-        return this.responses;
+        return responses;
     }
 
     /**
@@ -153,7 +152,7 @@ public class SnmpOperation implements Runnable {
      * @return the CommunityTarget[] containing the targets.
      */
     public CommunityTarget[] getTargets() {
-        return this.targets;
+        return targets;
     }
 
     /**
@@ -162,7 +161,7 @@ public class SnmpOperation implements Runnable {
      * @return an Address of the device.
      */
     public Address getAddress() {
-        return this.targets[0].getAddress();
+        return targets[0].getAddress();
     }
 
     /**
@@ -181,7 +180,7 @@ public class SnmpOperation implements Runnable {
      * @return the template.
      */
     public ElementTemplate getTemplate() {
-        return this.template;
+        return template;
     }
 
     /**
@@ -210,7 +209,7 @@ public class SnmpOperation implements Runnable {
      * <code>int</code> containing the operation.
      */
     public int getOperation() {
-        return this.operation;
+        return operation;
     }
 
     /**
@@ -219,33 +218,44 @@ public class SnmpOperation implements Runnable {
      */
     @Override
     public void run() {
-        if (this.request != null) {
-            switch (this.operation) {
-                case GET:
-                    this.request.setType(PDU.GET);
-                    break;
-                case GETNEXT:
-                    this.request.setType(PDU.GETNEXT);
-                    break;
-                case GETALL:
-                    this.request.setType(PDU.GETNEXT);
-                    break;
-                default:
+        if (request != null) {
+            try {
+                transport.listen();
+                switch (operation) {
+                    case GET:
+                        request.setType(PDU.GET);
+                        break;
+                    case GETNEXT:
+                        request.setType(PDU.GETNEXT);
+                        break;
+                    case GETALL:
+                        request.setType(PDU.GETNEXT);
+                        break;
+                    default:
 
-                //TODO handle error
+                    //TODO handle error
+                }
+                runGetOID();
+                snmp.close();
+                transport.close();
+            } catch (IOException ex) {
+                Logger.getLogger(SnmpOperation.class.getName()).log(Level.SEVERE,
+                                                                    null, ex);
             }
         }
-        runGetOID();
-        this.listener.onStop(this);
+        if (hasResponses()) {
+            listener.onStop(this);
+        }
+        close();
     }
 
     private void runGetOID() {
         boolean authorizationFailure = true;
-        PDU nextPdu = this.request;
+        PDU nextPdu = request;
         ArrayList<PDU> allResponses = new ArrayList<PDU>();
         try {
             boolean moreOIDs = false;
-            if (this.operation == GETALL) {
+            if (operation == GETALL) {
                 moreOIDs = true;
             }
             do {
@@ -254,14 +264,15 @@ public class SnmpOperation implements Runnable {
                 PDU[] localResponses = new PDU[requests.length];
                 for (int i = 0; i < targets.length && authorizationFailure; i++) {
                     for (int j = 0; j < requests.length; j++) {
-                        ResponseEvent response = this.snmp.send(requests[j],
-                                                                this.targets[i]);
+                        //TODO: Catch no route to host execption
+                        ResponseEvent response = snmp.send(requests[j],
+                                                           targets[i]);
                         if (response.getPeerAddress() == null) {
                             moreOIDs = false;
                             break;
                         }
                         PDU localResponse = response.getResponse();
-                        if (this.operation == GETALL) {
+                        if (operation == GETALL) {
                             VariableBinding[] bindings = localResponse.toArray();
                             if (bindings.length <= 0) {
                                 moreOIDs = false;
@@ -270,7 +281,7 @@ public class SnmpOperation implements Runnable {
                             for (int k = 0; k < bindings.length; k++) {
                                 OID responded = bindings[k].getOid();
                                 OID requested =
-                                        this.request.toArray()[pointer].getOid();
+                                        request.toArray()[pointer].getOid();
                                 pointer++;
                                 if (!responded.startsWith(requested)) {
                                     localResponse.set(k, new VariableBinding(
@@ -284,14 +295,17 @@ public class SnmpOperation implements Runnable {
                         }
                     }
                 }
-                if (!moreOIDs && this.operation == GETALL) {
+                if (!moreOIDs && operation == GETALL) {
                     break;
                 }
-                if (localResponses[0] == null && this.operation != GETALL) {
+                if (localResponses[0] == null && operation != GETALL) {
                     return;
                 }
                 PDU combinedResponse = combine(localResponses);
-                if (this.operation == GETALL) {
+                if (combinedResponse == null) {
+                    break;
+                }
+                if (operation == GETALL) {
                     boolean allNull = true;
                     VariableBinding[] bindings = combinedResponse.toArray();
                     for (int i = 0; i < bindings.length; i++) {
@@ -305,7 +319,7 @@ public class SnmpOperation implements Runnable {
                     }
                 }
                 allResponses.add(combinedResponse);
-                if (this.operation == GETALL) {
+                if (operation == GETALL) {
                     nextPdu = new PDU(nextPdu);
                     nextPdu.clear();
                     OID[] previous = new OID[combinedResponse.toArray().length];
@@ -320,7 +334,7 @@ public class SnmpOperation implements Runnable {
                                                             null, ex);
         }
         if (!allResponses.isEmpty()) {
-            this.responses = allResponses.toArray(new PDU[0]);
+            responses = allResponses.toArray(new PDU[0]);
         }
     }
 
@@ -350,7 +364,7 @@ public class SnmpOperation implements Runnable {
             oid = new OID();
             returnString = null;
         }
-        this.request.add(new VariableBinding(oid));
+        request.add(new VariableBinding(oid));
         return returnString;
     }
 
@@ -365,7 +379,7 @@ public class SnmpOperation implements Runnable {
      */
     public VariableBinding[] toArray(int response) {
         if (responses != null) {
-            return this.responses[response].toArray();
+            return responses[response].toArray();
         }
         return null;
     }
@@ -407,9 +421,12 @@ public class SnmpOperation implements Runnable {
     }
 
     private PDU combine(PDU[] subPdus) {
+        if (subPdus[0] == null) {
+            return null;
+        }
         PDU returnValue = new PDU(subPdus[0]);
         returnValue.clear();
-        returnValue.setRequestID(this.request.getRequestID());
+        returnValue.setRequestID(request.getRequestID());
         for (int i = 0; i < subPdus.length; i++) {
             for (int j = 0; j < subPdus[i].size(); j++) {
                 returnValue.add(subPdus[i].get(j));
@@ -421,12 +438,17 @@ public class SnmpOperation implements Runnable {
     /**
      * Returns true if the operation has a response and false otherwise.
      *
-     * @return a <code>boolean</code> indicating if there is a response.
+     * @return a
+     * <code>boolean</code> indicating if there is a response.
      */
     public boolean hasResponses() {
-        if (this.responses == null) {
+        if (responses == null) {
             return false;
         }
         return true;
+    }
+
+    public void close() {
+        Thread.currentThread().interrupt();
     }
 }

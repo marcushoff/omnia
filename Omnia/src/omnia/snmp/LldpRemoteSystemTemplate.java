@@ -27,7 +27,7 @@ public class LldpRemoteSystemTemplate extends ElementTemplate {
      */
     public LldpRemoteSystemTemplate(long time) {
         super(time);
-        size = 9;
+        size = 2;
         operation = SnmpOperation.GETALL;
         template = "lldpRemoteSystem";
         initialize();

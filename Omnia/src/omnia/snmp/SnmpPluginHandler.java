@@ -129,7 +129,18 @@ public class SnmpPluginHandler {
         return null;
     }
 
+    /**
+     * Returns the root element of a document. If document is null, the default
+     * root element will be returned.
+     *
+     * @param document the document
+     * @return the root element of the document or the root element of the
+     * default document.
+     */
     Element getRootElement(Document document) {
+        if(document == null) {
+            return this.defaultDocument.getRootElement();
+        }
         return document.getRootElement();
     }
 
@@ -147,15 +158,11 @@ public class SnmpPluginHandler {
         }
         Iterator<Pattern> iterator = objectIds.keySet().iterator();
         int longestMatch = 0;
-        System.out.println("Files: " + objectIds.size() + " objectId: " + objectId);
-
         Document match = null;
         while (iterator.hasNext()) {
-
             Pattern pattern = iterator.next();
-            System.out.println("Pattern: " +pattern.toString());
             Matcher matcher = pattern.matcher(objectId);
-            if (matcher.matches()) {
+            if (matcher.find()) {
                 MatchResult result = matcher.toMatchResult();
                 int matchLength = result.end() - result.start();
                 if (matchLength > longestMatch) {
